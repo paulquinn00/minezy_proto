@@ -5,9 +5,15 @@ import time
 import email.parser
 import multiprocessing
 import traceback
+import nltk
+from email_msg import emailMsg
 from neo4j_loader import neo4jLoader
+from word_counter import wordCounter
 
 def parser_worker(fileQ, loaderQ):
+    parser = email.parser.Parser()
+    counter = wordCounter()
+
     try:
         while True:
             fileName = fileQ.get()
@@ -19,24 +25,23 @@ def parser_worker(fileQ, loaderQ):
             if fileName[rootLen] == '/' or fileName[rootLen] == '\\':
                 rootLen += 1
             
-            parser = email.parser.Parser()
-            
-            with open(fileName) as f:
-                eFile = fileName[rootLen:]
-                email_msg = parser.parse(f, headersonly=True)
-                if len(email_msg._headers) > 0:
-                    
-                    t = email_msg._headers[0]
-                    if t[1] == 'VCARD':
-                        "vcard - skip"
-                    elif t[1] == 'VCALENDAR':
-                        "vcalendar - skip"
-                    else:
-                        loaderQ.put( (email_msg, eFile) )
+            email_msg = emailMsg.from_file(fileName)
+            eFile = fileName[rootLen:]
+            if len(email_msg.message._headers) > 0:
+                t = email_msg.message._headers[0]
+                if t[1] == 'VCARD':
+                    "vcard - skip"
+                elif t[1] == 'VCALENDAR':
+                    "vcalendar - skip"
+                else:
+                    email_msg.word_counts=counter.common_word_counts(email_msg)
+                    loaderQ.put( (email_msg, eFile) )
+
             fileQ.task_done()
             
     except Exception, e:
         print e
+        traceback.print_exc()
         pass
 
     loaderQ.put(None)
@@ -60,7 +65,6 @@ def service_loader_q(loaderQ, block, numRunning):
             if item == None:
                 numRunning = numRunning - 1
             else:
-                email_msg = item[0]
                 loader.add(item[0], item[1])
     except Exception,e:
         pass

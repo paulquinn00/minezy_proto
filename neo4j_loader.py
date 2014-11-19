@@ -160,7 +160,7 @@ class neo4jLoader:
 
     def add(self, email_msg, emailLink=None):
         try:
-            msgID = _get_decoded(email_msg['Message-ID'])
+            msgID = _get_decoded(email_msg.message['Message-ID'])
             
             if len(msgID) == 0 or msgID == "None":
                 msgID = "Unknown_%05d" % self.unknownMsgId
@@ -178,15 +178,15 @@ class neo4jLoader:
                         "Already processed msgID"
                         return
                         
-            msgSubject = _get_decoded(email_msg['Subject'])
-            msgDate = _get_decoded(email_msg['Date'])
-            msgIDParent = _get_decoded(email_msg['In-Reply-To']).strip("<>")
+            msgSubject = _get_decoded(email_msg.message['Subject'])
+            msgDate = _get_decoded(email_msg.message['Date'])
+            msgIDParent = _get_decoded(email_msg.message['In-Reply-To']).strip("<>")
             date = email.utils.parsedate_tz(msgDate)
             timestamp = email.utils.mktime_tz(date)
             
             # Add From Contact
-            msgFrom = email.utils.getaddresses(email_msg.get_all('From', ['']))
-            msgFromX = email_msg.get_all('X-From', [''])
+            msgFrom = email.utils.getaddresses(email_msg.message.get_all('From', ['']))
+            msgFromX = email_msg.message.get_all('X-From', [''])
             self._collect_name(msgFrom[0], msgFromX[0])
         
             msgEmail = str.lower(msgFrom[0][1])
@@ -234,7 +234,7 @@ class neo4jLoader:
             
             # Email Thread References
             refs = []
-            msgRefs = email.utils.getaddresses(email_msg.get_all('References', []))
+            msgRefs = email.utils.getaddresses(email_msg.message.get_all('References', []))
             for msgIDRef in msgRefs:
                 msgIDRef = msgIDRef[1].strip("<>")
                 refs.append(msgIDRef)
@@ -242,13 +242,22 @@ class neo4jLoader:
                 props['refs'] = refs
                 cypher += "FOREACH (ref in {refs} | MERGE (eRef:Email {id:ref}) SET eRef:`%d` CREATE UNIQUE (e)-[:REFS]->(eRef)) " % self.accountId
                 opCount += 2*len(refs)
+
+            # Word Counts
+            word_counts_prop = []
+            for word_count in email_msg.word_counts:
+                word_counts_prop.append({'word':word_count[0], 'count':word_count[1]})
+            if len(word_counts_prop):
+                props['word_counts'] = word_counts_prop
+                cypher += "FOREACH (word_count in {word_counts} | MERGE (eWord:Word {id:word_count.word}) SET eWord:`%d` CREATE UNIQUE (e)-[:WORDS {count:word_count.count}]->(eWord)) " % self.accountId
+                opCount += 2*len(word_counts_prop)
         
             # Add TO relations
             tos = []
-            msgTo = email.utils.getaddresses(email_msg.get_all('To', ['']))
-            msgToX = email_msg.get('X-To','').split('>,')
+            msgTo = email.utils.getaddresses(email_msg.message.get_all('To', ['']))
+            msgToX = email_msg.message.get('X-To','').split('>,')
             if len(msgToX) != len(msgTo):
-                msgToX = email_msg.get('X-To','').split(',')
+                msgToX = email_msg.message.get('X-To','').split(',')
                 if len(msgToX) != len(msgTo):
                     msgToX = []
                 
@@ -264,10 +273,10 @@ class neo4jLoader:
         
             # Add CC relations
             ccs = []
-            msgCc = email.utils.getaddresses(email_msg.get_all('Cc', ['']))
-            msgCcX = email_msg.get('X-cc','').split('>,')
+            msgCc = email.utils.getaddresses(email_msg.message.get_all('Cc', ['']))
+            msgCcX = email_msg.message.get('X-cc','').split('>,')
             if len(msgCcX) != len(msgCc):
-                msgCcX = email_msg.get('X-cc','').split(',')
+                msgCcX = email_msg.message.get('X-cc','').split(',')
                 if len(msgCcX) != len(msgCc):
                     msgCcX = []
                     
@@ -282,10 +291,10 @@ class neo4jLoader:
             
             # Add BCC relations
             bccs = []
-            msgBcc = email.utils.getaddresses(email_msg.get_all('bcc', []))
-            msgBccX = email_msg.get('X-bcc','').split('>,')
+            msgBcc = email.utils.getaddresses(email_msg.message.get_all('bcc', []))
+            msgBccX = email_msg.message.get('X-bcc','').split('>,')
             if len(msgBccX) != len(msgBcc):
-                msgBccX = email_msg.get('X-bcc','').split(',')
+                msgBccX = email_msg.message.get('X-bcc','').split(',')
                 if len(msgBccX) != len(msgBcc):
                     msgBccX = []
 
